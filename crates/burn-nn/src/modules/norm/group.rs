@@ -7,6 +7,7 @@ use burn::module::Param;
 use burn::module::{Content, DisplaySettings, ModuleDisplay};
 use burn::tensor::Tensor;
 use burn::tensor::backend::Backend;
+use burn::tensor::FloatDType;
 
 /// Configuration to create a [GroupNorm](GroupNorm) layer using the [init function](GroupNormConfig::init).
 #[derive(Debug, Config)]
@@ -164,14 +165,26 @@ pub(crate) fn group_norm<B: Backend, const D: usize>(
     let batch_size = shape[0];
     let num_channels = shape[1];
 
+    // Compute normalization in f32 to prevent overflow in variance calculation
+    // (matching PyTorch autocast behavior for group_norm)
+    let input_dtype: FloatDType = input.dtype().into();
+    let input = input.cast(FloatDType::F32);
+
     let hidden_size = shape[2..].iter().product::<usize>() * num_channels / num_groups;
     let input = input.reshape([batch_size, num_groups, hidden_size]);
 
-    let mean = input.clone().sum_dim(2) / hidden_size as f64;
+    // Use multiplication by reciprocal instead of division to avoid f16 scalar overflow.
+    // When hidden_size exceeds f16 max (~65504), dividing by a scalar converted to f16
+    // would produce 0 (division by inf). Multiplication by a small f32 reciprocal works.
+    let reciprocal = 1.0 / hidden_size as f64;
+    let mean = input.clone().sum_dim(2) * reciprocal;
     let input = input.sub(mean);
 
-    let var = input.clone().square().sum_dim(2) / hidden_size as f64;
+    let var = input.clone().square().sum_dim(2) * reciprocal;
     let input_normalized = input.div(var.add_scalar(epsilon).sqrt());
+
+    // Cast back to original dtype before applying affine transform
+    let input_normalized = input_normalized.cast(input_dtype);
 
     if affine {
         let mut affine_shape = [1; D];

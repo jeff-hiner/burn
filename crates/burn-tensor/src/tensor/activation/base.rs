@@ -1,6 +1,6 @@
 use crate::backend::Backend;
 use crate::check::TensorCheck;
-use crate::{Tensor, TensorPrimitive, check, s};
+use crate::{FloatDType, Tensor, TensorPrimitive, check, s};
 
 /// Applies the rectified linear unit function element-wise
 /// as described in the paper [Deep Learning using Rectified Linear Units (ReLU)](https://arxiv.org/pdf/1803.08375).
@@ -145,11 +145,16 @@ $$
 pub fn softmax<const D: usize, B: Backend>(tensor: Tensor<B, D>, dim: usize) -> Tensor<B, D> {
     check!(TensorCheck::dim_ops::<D>("softmax", dim));
 
+    // Compute softmax in f32 to prevent overflow and precision loss in half-precision.
+    // PyTorch autocast promotes softmax to f32 for the same reason.
+    let input_dtype: FloatDType = tensor.dtype().into();
+    let tensor = tensor.cast(FloatDType::F32);
+
     let tensor = tensor.clone() - tensor.detach().max_dim(dim);
     let tensor = tensor.exp();
     let tensor_tmp = tensor.clone().sum_dim(dim);
 
-    tensor.div(tensor_tmp)
+    tensor.div(tensor_tmp).cast(input_dtype)
 }
 
 /// Applies the softmin function on the input tensor along the given dimension.
@@ -220,11 +225,15 @@ $$
 pub fn quiet_softmax<const D: usize, B: Backend>(tensor: Tensor<B, D>, dim: usize) -> Tensor<B, D> {
     check!(TensorCheck::dim_ops::<D>("softmax", dim));
 
+    // Compute in f32 to prevent overflow and precision loss in half-precision.
+    let input_dtype: FloatDType = tensor.dtype().into();
+    let tensor = tensor.cast(FloatDType::F32);
+
     let max_vals = tensor.clone().detach().max_dim(dim);
     let exp_x = (tensor - max_vals.clone()).exp();
     let sum_exp = exp_x.clone().sum_dim(dim);
 
-    exp_x.div(sum_exp + max_vals.neg().exp())
+    exp_x.div(sum_exp + max_vals.neg().exp()).cast(input_dtype)
 }
 
 /// Applies the log softmax function on the input tensor along the given dimension.
@@ -252,10 +261,14 @@ $$
 pub fn log_softmax<const D: usize, B: Backend>(tensor: Tensor<B, D>, dim: usize) -> Tensor<B, D> {
     check!(TensorCheck::dim_ops::<D>("log softmax", dim));
 
+    // Compute in f32 to prevent overflow and precision loss in half-precision.
+    let input_dtype: FloatDType = tensor.dtype().into();
+    let tensor = tensor.cast(FloatDType::F32);
+
     let tensor = tensor.clone() - tensor.detach().max_dim(dim);
     let tensor_tmp = tensor.clone().exp().sum_dim(dim).log();
 
-    tensor.sub(tensor_tmp)
+    tensor.sub(tensor_tmp).cast(input_dtype)
 }
 
 /// Applies the sigmoid function element-wise.
