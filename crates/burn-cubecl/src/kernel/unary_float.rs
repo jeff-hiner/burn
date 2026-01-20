@@ -146,9 +146,30 @@ pub(crate) mod unary_basic {
 
         fn execute(input: Line<F>, options: &Self::Options) -> Line<F> {
             match comptime![options.kind] {
-                BasicFloatUnaryKind::Exp => Line::exp(input),
-                BasicFloatUnaryKind::Log => Line::ln(input),
-                BasicFloatUnaryKind::Log1p => Line::log1p(input),
+                // Numerically sensitive operations that can overflow in half-precision.
+                // PyTorch autocast promotes these to f32. We do the same to prevent NaN
+                // in diffusion model VAE decode and similar workloads.
+                BasicFloatUnaryKind::Exp => {
+                    let input_f32 = Line::<f32>::cast_from(input);
+                    Line::cast_from(Line::exp(input_f32))
+                }
+                BasicFloatUnaryKind::Log => {
+                    let input_f32 = Line::<f32>::cast_from(input);
+                    Line::cast_from(Line::ln(input_f32))
+                }
+                BasicFloatUnaryKind::Log1p => {
+                    let input_f32 = Line::<f32>::cast_from(input);
+                    Line::cast_from(Line::log1p(input_f32))
+                }
+                BasicFloatUnaryKind::Erf => {
+                    let input_f32 = Line::<f32>::cast_from(input);
+                    Line::cast_from(Line::erf(input_f32))
+                }
+                BasicFloatUnaryKind::Recip => {
+                    let input_f32 = Line::<f32>::cast_from(input);
+                    Line::cast_from(Line::recip(input_f32))
+                }
+                // Operations that are numerically stable in native precision
                 BasicFloatUnaryKind::Sqrt => Line::sqrt(input),
                 BasicFloatUnaryKind::Abs => Line::abs(input),
                 BasicFloatUnaryKind::Sign => {
@@ -172,8 +193,6 @@ pub(crate) mod unary_basic {
                 BasicFloatUnaryKind::Floor => Line::floor(input),
                 BasicFloatUnaryKind::Ceil => Line::ceil(input),
                 BasicFloatUnaryKind::Trunc => Line::trunc(input),
-                BasicFloatUnaryKind::Erf => Line::erf(input),
-                BasicFloatUnaryKind::Recip => Line::recip(input),
                 BasicFloatUnaryKind::ArcCos => Line::acos(input),
                 BasicFloatUnaryKind::ArcCosh => Line::acosh(input),
                 BasicFloatUnaryKind::ArcSin => Line::asin(input),
