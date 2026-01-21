@@ -1,4 +1,4 @@
-use crate::{Tensor, backend::Backend};
+use crate::{FloatDType, Tensor, backend::Backend};
 
 pub fn var<B: Backend, const D: usize>(tensor: Tensor<B, D>, dim: usize) -> Tensor<B, D> {
     let mean = tensor.clone().mean_dim(dim);
@@ -34,5 +34,10 @@ pub fn var_with_mean_n<B: Backend, const D: usize>(
     dim: usize,
     n: usize,
 ) -> Tensor<B, D> {
-    tensor.sub(mean).square().sum_dim(dim).div_scalar(n as f32)
+    // Compute variance in f32 to avoid overflow when squaring large values in f16
+    // (e.g., 800^2 = 640000 exceeds f16 max of 65504)
+    let original_dtype: FloatDType = tensor.dtype().into();
+    let diff = tensor.sub(mean).cast(FloatDType::F32);
+    let var_f32 = diff.square().sum_dim(dim).div_scalar(n as f32);
+    var_f32.cast(original_dtype)
 }
