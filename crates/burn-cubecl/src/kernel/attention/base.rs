@@ -42,8 +42,11 @@ pub fn flash_attention<R: CubeRuntime>(
         &mask.as_ref().map(|mask| mask.as_handle_ref()),
         &out.as_handle_ref(),
         &dtypes,
+        // TODO(upstream): causal should be a parameter exposed through burn's attention API.
+        // Hardcoded to false for bidirectional attention (diffusion models).
+        // LLM use cases need causal=true. PR to burn needed.
         AttentionOptions {
-            causal: true,
+            causal: false,
             accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
                 cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
             )),
