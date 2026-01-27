@@ -300,7 +300,14 @@ where
         mask: Option<BoolTensor<Self>>,
     ) -> FloatTensor<Self> {
         let out_dtype = query.dtype;
-        kernel::attention::flash_attention(query, key, value, mask, out_dtype)
-            .expect("Kernel to never fail")
+
+        // Use FlashAttention if FLASH_ATTENTION=1 environment variable is set
+        if std::env::var("FLASH_ATTENTION").map_or(false, |v| v == "1") {
+            return kernel::attention::flash_attention(query, key, value, mask, out_dtype)
+                .expect("FlashAttention kernel to never fail");
+        }
+
+        kernel::attention::sage_attention(query, key, value, mask, out_dtype)
+            .expect("SageAttention kernel to never fail")
     }
 }
