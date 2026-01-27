@@ -50,6 +50,7 @@ pub fn flash_attention<R: CubeRuntime>(
             accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
                 cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
             )),
+            int8_cmma: false,
         },
     )?;
 
