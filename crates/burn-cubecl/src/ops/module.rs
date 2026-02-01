@@ -300,6 +300,7 @@ where
         mask: Option<BoolTensor<Self>>,
     ) -> FloatTensor<Self> {
         let out_dtype = query.dtype;
+        let num_heads = query.shape.dims[1];
         let head_dim = query.shape.dims[3];
 
         // Use FlashAttention if FLASH_ATTENTION=1 environment variable is set
@@ -309,8 +310,9 @@ where
         }
 
         // SageAttention (INT8 CMMA) only supports head_dim <= 128
-        // Fall back to FlashAttention for larger head_dim
-        if head_dim > 128 {
+        // Fall back to FlashAttention for larger head_dim or single-head attention (VAE).
+        // Single-head attention doesn't benefit from SageAttention's parallelism.
+        if num_heads == 1 || head_dim > 128 {
             return kernel::attention::flash_attention(query, key, value, mask, out_dtype)
                 .expect("FlashAttention kernel to never fail");
         }
