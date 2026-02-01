@@ -228,6 +228,8 @@ pub enum ModuleOperationIr {
     Interpolate(InterpolateOpIr),
     /// Operation corresponding to [interpolate backward](burn_backend::ops::ModuleOps::interpolate_backward).
     InterpolateBackward(InterpolateBackwardOpIr),
+    /// Operation corresponding to [attention](burn_backend::ops::ModuleOps::attention).
+    Attention(AttentionOpIr),
 }
 
 /// Basic operations that can be done on any tensor type.
@@ -1516,6 +1518,22 @@ pub struct InterpolateBackwardOpIr {
     pub out: TensorIr,
 }
 
+/// Attention operation intermediate representation.
+#[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
+#[allow(missing_docs)]
+pub struct AttentionOpIr {
+    /// Query tensor [batch, heads, seq_q, head_dim]
+    pub query: TensorIr,
+    /// Key tensor [batch, heads, seq_kv, head_dim]
+    pub key: TensorIr,
+    /// Value tensor [batch, heads, seq_kv, val_dim]
+    pub value: TensorIr,
+    /// Optional mask tensor [batch, heads, seq_q, seq_kv]
+    pub mask: Option<TensorIr>,
+    /// Output tensor [batch, heads, seq_q, val_dim]
+    pub out: TensorIr,
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub enum GridSamplePaddingModeIr {
@@ -2475,6 +2493,14 @@ impl ModuleOperationIr {
             ModuleOperationIr::InterpolateBackward(repr) => {
                 Box::new([&repr.x, &repr.grad].into_iter())
             }
+            ModuleOperationIr::Attention(repr) => {
+                let base = [&repr.query, &repr.key, &repr.value];
+                if let Some(ref mask) = repr.mask {
+                    Box::new(base.into_iter().chain(core::iter::once(mask)))
+                } else {
+                    Box::new(base.into_iter())
+                }
+            }
         }
     }
     fn outputs(&self) -> Box<dyn Iterator<Item = &TensorIr> + '_> {
@@ -2547,6 +2573,7 @@ impl ModuleOperationIr {
             }
             ModuleOperationIr::Interpolate(repr) => Box::new([&repr.out].into_iter()),
             ModuleOperationIr::InterpolateBackward(repr) => Box::new([&repr.out].into_iter()),
+            ModuleOperationIr::Attention(repr) => Box::new([&repr.out].into_iter()),
         }
     }
 
@@ -2697,6 +2724,14 @@ impl ModuleOperationIr {
             ModuleOperationIr::InterpolateBackward(repr) => {
                 repr.x.mark_read_only(nodes, &mut output);
                 repr.grad.mark_read_only(nodes, &mut output);
+            }
+            ModuleOperationIr::Attention(repr) => {
+                repr.query.mark_read_only(nodes, &mut output);
+                repr.key.mark_read_only(nodes, &mut output);
+                repr.value.mark_read_only(nodes, &mut output);
+                if let Some(mask) = &mut repr.mask {
+                    mask.mark_read_only(nodes, &mut output);
+                }
             }
         };
 

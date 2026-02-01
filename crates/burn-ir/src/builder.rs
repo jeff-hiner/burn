@@ -599,6 +599,18 @@ impl_ir_create!(
 );
 
 impl_ir_create!(
+    AttentionOpIr {
+        query: TensorIr,
+        key: TensorIr,
+        value: TensorIr,
+        mask: Option<TensorIr>
+    },
+    // Output shape: [batch, heads, seq_q, val_dim]
+    shape = Shape::new([query.shape[0], query.shape[1], query.shape[2], value.shape[3]]),
+    dtype = query.dtype
+);
+
+impl_ir_create!(
     GridSample2dOpIr {
         tensor: TensorIr,
         grid: TensorIr,
