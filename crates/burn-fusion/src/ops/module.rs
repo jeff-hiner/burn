@@ -9,7 +9,7 @@ use burn_backend::{
         InterpolateOptions, MaxPool1dBackward, MaxPool1dWithIndices, MaxPool2dBackward,
         MaxPool2dWithIndices, ModuleOps,
     },
-    tensor::{FloatTensor, IntTensor},
+    tensor::{BoolTensor, FloatTensor, IntTensor},
 };
 use burn_ir::*;
 use std::marker::PhantomData;
@@ -1153,6 +1153,53 @@ impl<B: FusionBackend> ModuleOps<Fusion<B>> for Fusion<B> {
                 streams,
                 OperationIr::Module(ModuleOperationIr::InterpolateBackward(desc.clone())),
                 InterpolateBackwardOps::<B>::new(desc),
+            )
+            .output()
+    }
+
+    fn attention(
+        query: FloatTensor<Self>,
+        key: FloatTensor<Self>,
+        value: FloatTensor<Self>,
+        mask: Option<BoolTensor<Self>>,
+    ) -> FloatTensor<Self> {
+        make_ops!(
+            AttentionOps,
+            AttentionOpIr,
+            |args: &AttentionOpIr, handles: &mut HandleContainer<B::Handle>| {
+                let query = handles.get_float_tensor::<B>(&args.query);
+                let key = handles.get_float_tensor::<B>(&args.key);
+                let value = handles.get_float_tensor::<B>(&args.value);
+                let mask = args
+                    .mask
+                    .as_ref()
+                    .map(|mask| handles.get_bool_tensor::<B>(mask));
+
+                let output = B::attention(query, key, value, mask);
+
+                handles.register_float_tensor::<B>(&args.out.id, output);
+            }
+        );
+
+        let mut streams = OperationStreams::with_inputs([&query, &key, &value]);
+        if let Some(mask) = mask.as_ref() {
+            streams.tensor(mask)
+        }
+
+        let client = query.client.clone();
+        let desc = AttentionOpIr::create(
+            query.into_ir(),
+            key.into_ir(),
+            value.into_ir(),
+            mask.map(|mask| mask.into_ir()),
+            || client.create_empty_handle(),
+        );
+
+        client
+            .register(
+                streams,
+                OperationIr::Module(ModuleOperationIr::Attention(desc.clone())),
+                AttentionOps::<B>::new(desc),
             )
             .output()
     }
