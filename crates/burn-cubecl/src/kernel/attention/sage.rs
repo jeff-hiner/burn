@@ -69,6 +69,8 @@ pub fn sage_attention<R: CubeRuntime>(
             )),
             int8_cmma: true, // Enable INT8 CMMA for SageAttention
         },
+        // Pass original (pre-padding) head_dim for correct softmax scaling
+        Some(original_head_dim),
     )?;
 
     // Slice output back to original val_dim
