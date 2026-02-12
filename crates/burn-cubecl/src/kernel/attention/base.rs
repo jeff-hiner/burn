@@ -94,7 +94,12 @@ pub(super) fn unpad_head_dim<R: CubeRuntime>(
     )
 }
 
-/// Launch a flash attention kernel
+/// Launch flash attention using f16×f16→f32 CMMA (BlackboxAccelerated).
+///
+/// This is the fallback for cases where INT8 CMMA isn't suitable:
+/// - Single-head attention (e.g., VAE)
+/// - head_dim > 128
+/// - Explicit FLASH_ATTENTION=1 override
 pub fn flash_attention<R: CubeRuntime>(
     query: CubeTensor<R>,
     key: CubeTensor<R>,
@@ -102,80 +107,11 @@ pub fn flash_attention<R: CubeRuntime>(
     mask: Option<CubeTensor<R>>,
     out_dtype: DType,
 ) -> Result<CubeTensor<R>, AttentionSetupError> {
-    // Check environment variables for strategy selection
-    if std::env::var("ATTENTION_UNIT").is_ok() {
-        // Unit uses 4x4 tiles, no padding needed for typical head_dim values
-        flash_attention_unit(query, key, value, mask, out_dtype)
-    } else if std::env::var("ATTENTION_SAGE").is_ok() {
-        // Sage uses CMMA, needs padding for non-aligned head_dim
-        flash_attention_sage(query, key, value, mask, out_dtype)
-    } else {
-        // BlackboxAccelerated uses CMMA, needs padding for non-aligned head_dim
-        flash_attention_cmma(query, key, value, mask, out_dtype)
-    }
-}
-
-/// Sage attention - uses CMMA with padding
-fn flash_attention_sage<R: CubeRuntime>(
-    query: CubeTensor<R>,
-    key: CubeTensor<R>,
-    value: CubeTensor<R>,
-    mask: Option<CubeTensor<R>>,
-    out_dtype: DType,
-) -> Result<CubeTensor<R>, AttentionSetupError> {
-    let num_batches = query.shape.dims[0];
-    let num_heads = query.shape.dims[1];
-    let seq_q = query.shape.dims[2];
-    let original_head_dim = query.shape.dims[3];
-    let original_val_dim = value.shape.dims[3];
-
-    // Pad head_dim to 64 or 128 for CMMA (ensures divisibility by tile sizes)
-    let target_head_dim = padded_head_dim(original_head_dim);
-    let target_val_dim = padded_head_dim(original_val_dim);
-
-    let query = pad_head_dim(query, target_head_dim);
-    let key = pad_head_dim(key, target_head_dim);
-    let value = pad_head_dim(value, target_val_dim);
-
-    let out_shape = Shape::new([num_batches, num_heads, seq_q, target_val_dim]);
-    let out = empty_device_dtype::<R>(query.client.clone(), query.device.clone(), out_shape, out_dtype);
-
-    let dtypes = AttentionGlobalTypes {
-        query: query.dtype.into(),
-        key: key.dtype.into(),
-        value: value.dtype.into(),
-        mask: mask.as_ref().map(|m| m.dtype).unwrap_or(DType::U8).into(),
-        out: out.dtype.into(),
-    };
-
-    let options = AttentionOptions {
-        causal: false,
-        accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
-            cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
-        )),
-        int8_cmma: false,
-    };
-
-    cubek::attention::launch::launch_ref::<R>(
-        Strategy::Sage(cubek::attention::launch::BlueprintStrategy::Inferred(())),
-        &query.client,
-        &query.as_handle_ref(),
-        &key.as_handle_ref(),
-        &value.as_handle_ref(),
-        &mask.as_ref().map(|mask| mask.as_handle_ref()),
-        &out.as_handle_ref(),
-        &dtypes,
-        options,
-        Some(original_head_dim),
-    )?;
-
-    // Slice output back to original val_dim
-    let out = unpad_head_dim(out, original_val_dim);
-
-    Ok(out)
+    flash_attention_cmma(query, key, value, mask, out_dtype)
 }
 
 /// Unit (reference) attention - no padding needed
+#[expect(dead_code, reason = "retained for debugging until INT8 CMMA is verified")]
 fn flash_attention_unit<R: CubeRuntime>(
     query: CubeTensor<R>,
     key: CubeTensor<R>,
