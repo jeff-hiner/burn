@@ -140,7 +140,6 @@ fn flash_attention_unit<R: CubeRuntime>(
         accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
             cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
         )),
-        int8_cmma: false,
     };
 
     cubek::attention::launch::launch_ref::<R>(
@@ -223,7 +222,6 @@ fn flash_attention_cmma<R: CubeRuntime>(
         accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
             cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
         )),
-        int8_cmma: false,
     };
 
     cubek::attention::launch::launch_ref::<R>(

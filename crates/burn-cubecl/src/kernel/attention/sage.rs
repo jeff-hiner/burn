@@ -67,7 +67,6 @@ pub fn sage_attention<R: CubeRuntime>(
             accumulator_precision: AccumulatorPrecision::Strict(cubecl::ir::StorageType::Scalar(
                 cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
             )),
-            int8_cmma: true, // Enable INT8 CMMA for SageAttention
         },
         // Pass original (pre-padding) head_dim for correct softmax scaling
         Some(original_head_dim),
