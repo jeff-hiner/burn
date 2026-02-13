@@ -96,10 +96,9 @@ pub(super) fn unpad_head_dim<R: CubeRuntime>(
 
 /// Launch flash attention using f16×f16→f32 CMMA (BlackboxAccelerated).
 ///
-/// This is the fallback for cases where INT8 CMMA isn't suitable:
-/// - Single-head attention (e.g., VAE)
-/// - head_dim > 128
-/// - Explicit FLASH_ATTENTION=1 override
+/// This is the default attention backend. INT8 CMMA (SageAttention)
+/// can be enabled via `INT8_CMMA=1` for compatible shapes (multi-head,
+/// head_dim <= 128).
 pub fn flash_attention<R: CubeRuntime>(
     query: CubeTensor<R>,
     key: CubeTensor<R>,

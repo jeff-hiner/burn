@@ -303,21 +303,44 @@ where
         let num_heads = query.shape.dims[1];
         let head_dim = query.shape.dims[3];
 
-        // Use FlashAttention if FLASH_ATTENTION=1 environment variable is set
-        if std::env::var("FLASH_ATTENTION").map_or(false, |v| v == "1") {
-            return kernel::attention::flash_attention(query, key, value, mask, out_dtype)
-                .expect("FlashAttention kernel to never fail");
+        let debug_attention = std::env::var("DEBUG_ATTENTION").map_or(false, |v| v == "1");
+
+        // Use SageAttention (INT8 CMMA) if INT8_CMMA=1 environment variable is set,
+        // the shape is compatible, and multi-head (head_dim <= 128, num_heads > 1).
+        let int8_requested = std::env::var("INT8_CMMA").map_or(false, |v| v == "1");
+        let int8_compatible = num_heads > 1 && head_dim <= 128;
+
+        if int8_requested && int8_compatible {
+            if debug_attention {
+                eprintln!(
+                    "[DEBUG_ATTENTION] SageAttention (INT8 CMMA): Q{:?} K{:?} V{:?} mask={}",
+                    query.shape.dims,
+                    key.shape.dims,
+                    value.shape.dims,
+                    mask.is_some()
+                );
+            }
+            return kernel::attention::sage_attention(query, key, value, mask, out_dtype)
+                .expect("SageAttention kernel to never fail");
         }
 
-        // SageAttention (INT8 CMMA) only supports head_dim <= 128
-        // Fall back to FlashAttention for larger head_dim or single-head attention (VAE).
-        // Single-head attention doesn't benefit from SageAttention's parallelism.
-        if num_heads == 1 || head_dim > 128 {
-            return kernel::attention::flash_attention(query, key, value, mask, out_dtype)
-                .expect("FlashAttention kernel to never fail");
+        if debug_attention {
+            let reason = if int8_requested && !int8_compatible {
+                format!(" (INT8 fallback: num_heads={num_heads}, head_dim={head_dim})")
+            } else {
+                String::new()
+            };
+            eprintln!(
+                "[DEBUG_ATTENTION] FlashAttention (f16 CMMA): Q{:?} K{:?} V{:?} mask={}{}",
+                query.shape.dims,
+                key.shape.dims,
+                value.shape.dims,
+                mask.is_some(),
+                reason
+            );
         }
 
-        kernel::attention::sage_attention(query, key, value, mask, out_dtype)
-            .expect("SageAttention kernel to never fail")
+        kernel::attention::flash_attention(query, key, value, mask, out_dtype)
+            .expect("FlashAttention kernel to never fail")
     }
 }
