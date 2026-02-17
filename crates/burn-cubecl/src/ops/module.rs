@@ -340,7 +340,16 @@ where
             );
         }
 
-        kernel::attention::flash_attention(query, key, value, mask, out_dtype)
-            .expect("FlashAttention kernel to never fail")
+        match kernel::attention::flash_attention(query.clone(), key.clone(), value.clone(), mask.clone(), out_dtype) {
+            Ok(result) => result,
+            Err(e) => {
+                if debug_attention {
+                    eprintln!(
+                        "[DEBUG_ATTENTION] FlashAttention unavailable ({e}), falling back to naive"
+                    );
+                }
+                burn_backend::ops::attention::naive_attention::<Self>(query, key, value, mask)
+            }
+        }
     }
 }
