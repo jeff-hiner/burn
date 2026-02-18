@@ -76,26 +76,17 @@ fn interpolate_bilinear_kernel<F: Float>(
 
     let zero = Line::empty(line_size).fill(F::new(0.0));
 
-    let p_a = select(
-        x0_ok && y0_ok,
-        input[index_base + y0_stride + x0_stride] * xw_ * yw_,
-        zero,
-    );
-    let p_b = select(
-        x1_ok && y0_ok,
-        input[index_base + y0_stride + x1_stride] * xw * yw_,
-        zero,
-    );
-    let p_c = select(
-        x0_ok && y1_ok,
-        input[index_base + y1_stride + x0_stride] * xw_ * yw,
-        zero,
-    );
-    let p_d = select(
-        x1_ok && y1_ok,
-        input[index_base + y1_stride + x1_stride] * xw * yw,
-        zero,
-    );
+    // Divide element indices by line_size to get line indices for tensor access.
+    // Strides are in elements, but tensor indexing is in units of lines.
+    let idx_a = (index_base + y0_stride + x0_stride) / line_size;
+    let idx_b = (index_base + y0_stride + x1_stride) / line_size;
+    let idx_c = (index_base + y1_stride + x0_stride) / line_size;
+    let idx_d = (index_base + y1_stride + x1_stride) / line_size;
+
+    let p_a = select(x0_ok && y0_ok, input[idx_a] * xw_ * yw_, zero);
+    let p_b = select(x1_ok && y0_ok, input[idx_b] * xw * yw_, zero);
+    let p_c = select(x0_ok && y1_ok, input[idx_c] * xw_ * yw, zero);
+    let p_d = select(x1_ok && y1_ok, input[idx_d] * xw * yw, zero);
 
     output[out_idx] = p_a + p_b + p_c + p_d;
 }
