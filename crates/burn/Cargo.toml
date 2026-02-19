@@ -33,7 +33,7 @@ default = [
     "burn-autodiff?/default",
     "burn-rocm?/default",
     "burn-nn/default",
-    "burn-optim/default",
+    "optim",
 ]
 doc = [
     "default",
@@ -53,8 +53,9 @@ doc = [
     "burn-autodiff?/std",
     "burn-rocm/doc",
     "burn-nn/doc",
-    "burn-optim/doc",
+    "burn-optim?/doc",
 ]
+optim = ["burn-optim"]
 std = [
     "burn-core/std",
     # Backends
@@ -68,7 +69,7 @@ std = [
     "burn-rocm?/std",
     "burn-store?/std",
     "burn-nn/std",
-    "burn-optim/std",
+    "burn-optim?/std",
 ]
 tracing = [
     "cubecl?/tracing",
@@ -84,14 +85,14 @@ tracing = [
     "burn-rocm?/tracing",
     "burn-store?/tracing",
     "burn-nn/tracing",
-    "burn-optim/tracing",
+    "burn-optim?/tracing",
 ]
 
 
 network = ["burn-core/network"]
 
 # Training with full features
-train = ["burn-train", "autodiff", "dataset"]
+train = ["burn-train", "autodiff", "dataset", "optim"]
 
 ## Includes the Text UI (progress bars, metric plots)
 tui = ["burn-train?/tui"]
@@ -152,7 +153,7 @@ router = ["burn-router", "ir"]
 server = ["burn-remote/server"]
 simd = ["burn-ndarray?/simd"]
 template = ["burn-wgpu?/template"]
-collective = ["burn-collective", "burn-optim/collective", "burn-train?/ddp"]
+collective = ["burn-collective", "optim", "burn-optim?/collective", "burn-train?/ddp"]
 
 candle = ["burn-candle"]
 candle-cuda = ["candle", "burn-candle/cuda"]
@@ -176,7 +177,7 @@ burn-train = { path = "../burn-train", version = "=0.20.0", optional = true, def
 burn-collective = { path = "../burn-collective", version = "=0.20.0", optional = true, default-features = false }
 burn-store = { path = "../burn-store", version = "=0.20.0", optional = true, default-features = false }
 burn-nn = { path = "../burn-nn", version = "=0.20.0", default-features = false }
-burn-optim = { path = "../burn-optim", version = "=0.20.0", default-features = false }
+burn-optim = { path = "../burn-optim", version = "=0.20.0", default-features = false, optional = true }
 
 # Backends
 burn-autodiff = { path = "../burn-autodiff", version = "=0.20.0", optional = true, default-features = false }
