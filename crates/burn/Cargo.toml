@@ -33,7 +33,7 @@ default = [
     "burn-autodiff?/default",
     "burn-rocm?/default",
     "burn-nn/default",
-    "burn-optim/default",
+    "optim",
     "burn-dispatch?/default",
 ]
 doc = [
@@ -54,9 +54,10 @@ doc = [
     "burn-autodiff?/std",
     "burn-rocm/doc",
     "burn-nn/doc",
-    "burn-optim/doc",
+    "burn-optim?/doc",
     "burn-dispatch?/doc",
 ]
+optim = ["burn-optim"]
 std = [
     "burn-core/std",
     # Backends
@@ -71,7 +72,7 @@ std = [
     "burn-store?/std",
     "burn-tch?/std",
     "burn-nn/std",
-    "burn-optim/std",
+    "burn-optim?/std",
     "burn-dispatch?/std",
 ]
 tracing = [
@@ -89,7 +90,7 @@ tracing = [
     "burn-tch?/tracing",
     "burn-store?/tracing",
     "burn-nn/tracing",
-    "burn-optim/tracing",
+    "burn-optim?/tracing",
     "burn-dispatch?/tracing",
 ]
 
@@ -97,7 +98,7 @@ tracing = [
 network = ["burn-core/network"]
 
 # Training with full features
-train = ["burn-train", "autodiff", "dataset"]
+train = ["burn-train", "autodiff", "dataset", "optim"]
 
 ## Includes the Text UI (progress bars, metric plots)
 tui = ["burn-train?/tui"]
@@ -159,7 +160,7 @@ router = ["burn-router", "ir"]
 server = ["burn-remote/server"]
 simd = ["burn-ndarray?/simd"]
 template = ["burn-wgpu?/template"]
-collective = ["burn-collective", "burn-optim/collective", "burn-train?/ddp"]
+collective = ["burn-collective", "optim", "burn-optim?/collective", "burn-train?/ddp"]
 
 candle = ["burn-candle"]
 candle-cuda = ["candle", "burn-candle/cuda"]
@@ -186,7 +187,7 @@ burn-train = { path = "../burn-train", version = "=0.21.0-pre.2", optional = tru
 burn-collective = { path = "../burn-collective", version = "=0.21.0-pre.2", optional = true, default-features = false }
 burn-store = { path = "../burn-store", version = "=0.21.0-pre.2", optional = true, default-features = false }
 burn-nn = { path = "../burn-nn", version = "=0.21.0-pre.2", default-features = false }
-burn-optim = { path = "../burn-optim", version = "=0.21.0-pre.2", default-features = false }
+burn-optim = { path = "../burn-optim", version = "=0.21.0-pre.2", default-features = false, optional = true }
 burn-rl = { path = "../burn-rl", version = "=0.21.0-pre.2", optional = true, default-features = false }
 
 # Backends
