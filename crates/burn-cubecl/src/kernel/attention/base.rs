@@ -48,6 +48,7 @@ pub fn flash_attention<R: CubeRuntime>(
                 cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
             )),
         },
+        None,
     )?;
 
     Ok(out)
