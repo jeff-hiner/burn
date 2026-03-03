@@ -329,16 +329,20 @@ where
             );
         }
 
-        kernel::attention::attention(
-            query,
-            key,
-            value,
-            mask,
-            attn_bias,
-            options,
+        match kernel::attention::attention(
+            query.clone(),
+            key.clone(),
+            value.clone(),
+            mask.clone(),
+            attn_bias.clone(),
+            options.clone(),
             &kernel::attention::AttentionStrategy::FlashBlackboxAccelerated,
             None,
-        )
-        .expect("Kernel to never fail")
+        ) {
+            Ok(out) => out,
+            Err(_) => burn_backend::ops::attention::attention_fallback::<Self>(
+                query, key, value, mask, attn_bias, options,
+            ),
+        }
     }
 }
