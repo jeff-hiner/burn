@@ -1,9 +1,13 @@
 use crate::{
-    CubeBackend, CubeRuntime, kernel::attention::attention_autotune,
-    ops::numeric::empty_device_dtype, tensor::CubeTensor,
+    CubeBackend, CubeRuntime,
+    kernel::index::{slice, slice_assign},
+    ops::numeric::{empty_device_dtype, zeros_client},
+    tensor::CubeTensor,
 };
+#[cfg(feature = "autotune")]
+use crate::kernel::attention::attention_autotune;
 use burn_backend::{
-    DType, Shape,
+    DType, Shape, Slice,
     ops::{AttentionModuleOptions, attention::attention_fallback},
 };
 use cubek::attention::definition::{
@@ -90,7 +94,7 @@ pub fn attention<R: CubeRuntime>(
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Launch a flash attention kernel
+/// Launch a flash attention kernel, auto-padding head_dim to next multiple of 16 if needed.
 pub fn flash_attention<R: CubeRuntime>(
     query: CubeTensor<R>,
     key: CubeTensor<R>,
@@ -101,6 +105,22 @@ pub fn flash_attention<R: CubeRuntime>(
     out: CubeTensor<R>,
     strategy: launch::Strategy,
 ) -> Result<CubeTensor<R>, AttentionSetupError> {
+    let head_dim = query.meta.shape[3];
+    let padded_dim = head_dim.next_multiple_of(16);
+    let needs_padding = padded_dim != head_dim;
+
+    let (query, key, value, out, original_head_dim) = if needs_padding {
+        // Q can be uninitialized — K's zero-padded columns kill those dot-product terms.
+        // K and V must be zero-padded so the kernel sees zeros beyond original_head_dim.
+        let q = pad_dim3_empty(&query, padded_dim);
+        let k = pad_dim3_zeros(&key, padded_dim);
+        let v = pad_dim3_zeros(&value, padded_dim);
+        let o = init_attention_output(&q, &v);
+        (q, k, v, o, Some(head_dim))
+    } else {
+        (query, key, value, out, None)
+    };
+
     let client = &query.client;
 
     let dtypes = AttentionGlobalTypes {
@@ -126,10 +146,68 @@ pub fn flash_attention<R: CubeRuntime>(
                 cubecl::ir::ElemType::Float(cubecl::ir::FloatKind::F32),
             )),
         },
-        None,
+        original_head_dim,
     )?;
 
-    Ok(out)
+    if needs_padding {
+        Ok(narrow_dim3(&out, head_dim))
+    } else {
+        Ok(out)
+    }
+}
+
+/// Pad dimension 3 with zeros (for K, V where padding must be zero).
+fn pad_dim3_zeros<R: CubeRuntime>(tensor: &CubeTensor<R>, padded_dim: usize) -> CubeTensor<R> {
+    let b = tensor.meta.shape[0];
+    let h = tensor.meta.shape[1];
+    let s = tensor.meta.shape[2];
+    let padded = zeros_client::<R>(
+        tensor.client.clone(),
+        tensor.device.clone(),
+        Shape::new([b, h, s, padded_dim]),
+        tensor.dtype,
+    );
+    copy_into_padded(tensor, padded)
+}
+
+/// Pad dimension 3 without initializing (for Q where padding values are irrelevant).
+fn pad_dim3_empty<R: CubeRuntime>(tensor: &CubeTensor<R>, padded_dim: usize) -> CubeTensor<R> {
+    let b = tensor.meta.shape[0];
+    let h = tensor.meta.shape[1];
+    let s = tensor.meta.shape[2];
+    let padded = empty_device_dtype::<R>(
+        tensor.client.clone(),
+        tensor.device.clone(),
+        Shape::new([b, h, s, padded_dim]),
+        tensor.dtype,
+    );
+    copy_into_padded(tensor, padded)
+}
+
+/// Copy `src` into the leading region of `dst` along dim 3 via slice_assign.
+fn copy_into_padded<R: CubeRuntime>(
+    src: &CubeTensor<R>,
+    dst: CubeTensor<R>,
+) -> CubeTensor<R> {
+    let b = src.meta.shape[0];
+    let h = src.meta.shape[1];
+    let s = src.meta.shape[2];
+    let d = src.meta.shape[3];
+    let slices = [
+        Slice { start: 0, end: Some(b as isize), step: 1 },
+        Slice { start: 0, end: Some(h as isize), step: 1 },
+        Slice { start: 0, end: Some(s as isize), step: 1 },
+        Slice { start: 0, end: Some(d as isize), step: 1 },
+    ];
+    slice_assign(dst, &slices, src.clone())
+}
+
+/// Narrow dimension 3 back to the original head_dim (potentially zero-copy).
+fn narrow_dim3<R: CubeRuntime>(tensor: &CubeTensor<R>, head_dim: usize) -> CubeTensor<R> {
+    let b = tensor.meta.shape[0];
+    let h = tensor.meta.shape[1];
+    let s = tensor.meta.shape[2];
+    slice(tensor.clone(), &[0..b, 0..h, 0..s, 0..head_dim])
 }
 
 pub(crate) fn init_attention_output<R: CubeRuntime>(

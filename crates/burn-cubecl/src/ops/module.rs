@@ -336,7 +336,7 @@ where
             mask,
             attn_bias,
             options,
-            &Default::default(),
+            &kernel::attention::AttentionStrategy::FlashBlackboxAccelerated,
             None,
         )
         .expect("Kernel to never fail")
