@@ -1,5 +1,6 @@
 use crate::{
     CubeBackend, CubeRuntime,
+    kernel::contiguous::into_contiguous,
     kernel::index::{slice, slice_assign},
     ops::numeric::{empty_device_dtype, zeros_client},
     tensor::CubeTensor,
@@ -105,14 +106,21 @@ pub fn flash_attention<R: CubeRuntime>(
     out: CubeTensor<R>,
     strategy: launch::Strategy,
 ) -> Result<CubeTensor<R>, AttentionSetupError> {
+    // Flash attention reads inputs via flat indexing (ignoring strides), so
+    // non-contiguous tensors (e.g. from swap_dims) must be materialized first.
+    let query = into_contiguous(query);
+    let key = into_contiguous(key);
+    let value = into_contiguous(value);
+
     let head_dim = query.meta.shape[3];
     let padded_dim = head_dim.next_multiple_of(16);
     let needs_padding = padded_dim != head_dim;
 
     let (query, key, value, out, original_head_dim) = if needs_padding {
-        // Q can be uninitialized — K's zero-padded columns kill those dot-product terms.
-        // K and V must be zero-padded so the kernel sees zeros beyond original_head_dim.
-        let q = pad_dim3_empty(&query, padded_dim);
+        // All of Q, K, V must be zero-padded: even though K's zero columns would kill
+        // dot-product terms for finite Q padding, IEEE 754 says NaN × 0 = NaN, so
+        // uninitialized Q padding (which may contain NaN) would poison the accumulator.
+        let q = pad_dim3_zeros(&query, padded_dim);
         let k = pad_dim3_zeros(&key, padded_dim);
         let v = pad_dim3_zeros(&value, padded_dim);
         let o = init_attention_output(&q, &v);
@@ -156,8 +164,14 @@ pub fn flash_attention<R: CubeRuntime>(
     }
 }
 
-/// Pad dimension 3 with zeros (for K, V where padding must be zero).
+/// Pad dimension 3 with zeros (for Q, K, V where padding must be zero).
+///
+/// The input tensor is forced contiguous first because `copy_into_padded` uses
+/// `slice_assign`, whose kernel reads the source via `LinearView` (sequential
+/// memory access). Non-contiguous inputs (e.g. from `swap_dims`) would be
+/// read in the wrong order, producing scrambled padding.
 fn pad_dim3_zeros<R: CubeRuntime>(tensor: &CubeTensor<R>, padded_dim: usize) -> CubeTensor<R> {
+    let tensor = into_contiguous(tensor.clone());
     let b = tensor.meta.shape[0];
     let h = tensor.meta.shape[1];
     let s = tensor.meta.shape[2];
@@ -167,21 +181,7 @@ fn pad_dim3_zeros<R: CubeRuntime>(tensor: &CubeTensor<R>, padded_dim: usize) -> 
         Shape::new([b, h, s, padded_dim]),
         tensor.dtype,
     );
-    copy_into_padded(tensor, padded)
-}
-
-/// Pad dimension 3 without initializing (for Q where padding values are irrelevant).
-fn pad_dim3_empty<R: CubeRuntime>(tensor: &CubeTensor<R>, padded_dim: usize) -> CubeTensor<R> {
-    let b = tensor.meta.shape[0];
-    let h = tensor.meta.shape[1];
-    let s = tensor.meta.shape[2];
-    let padded = empty_device_dtype::<R>(
-        tensor.client.clone(),
-        tensor.device.clone(),
-        Shape::new([b, h, s, padded_dim]),
-        tensor.dtype,
-    );
-    copy_into_padded(tensor, padded)
+    copy_into_padded(&tensor, padded)
 }
 
 /// Copy `src` into the leading region of `dst` along dim 3 via slice_assign.
@@ -202,7 +202,7 @@ fn copy_into_padded<R: CubeRuntime>(
     slice_assign(dst, &slices, src.clone())
 }
 
-/// Narrow dimension 3 back to the original head_dim (potentially zero-copy).
+/// Narrow dimension 3 back to the original head_dim.
 fn narrow_dim3<R: CubeRuntime>(tensor: &CubeTensor<R>, head_dim: usize) -> CubeTensor<R> {
     let b = tensor.meta.shape[0];
     let h = tensor.meta.shape[1];
