@@ -8,6 +8,7 @@ use burn::module::Module;
 use burn::module::ModuleDisplay;
 use burn::module::Param;
 use burn::tensor::Tensor;
+use burn::tensor::FloatDType;
 use burn::tensor::backend::Backend;
 
 /// Configuration to create a [LayerNorm](LayerNorm) layer using the [init function](LayerNormConfig::init).
@@ -73,9 +74,16 @@ impl<B: Backend> LayerNorm<B> {
     /// - input: `[..., any, d_model]`
     /// - output: `[..., any, d_model]`
     pub fn forward<const D: usize>(&self, input: Tensor<B, D>) -> Tensor<B, D> {
-        let (var, mean) = input.clone().var_mean_bias(D - 1);
+        // Compute normalization in f32 to prevent overflow in variance calculation
+        // (matching PyTorch autocast behavior and the GroupNorm f32 fix)
+        let input_dtype: FloatDType = input.dtype().into();
+        let input_f32 = input.cast(FloatDType::F32);
 
-        let input_normalized = input.sub(mean).div(var.add_scalar(self.epsilon).sqrt());
+        let (var, mean) = input_f32.clone().var_mean_bias(D - 1);
+        let input_normalized = input_f32.sub(mean).div(var.add_scalar(self.epsilon).sqrt());
+
+        // Cast back to original dtype before applying affine transform
+        let input_normalized = input_normalized.cast(input_dtype);
 
         let output = input_normalized.mul(self.gamma.val().unsqueeze());
 
