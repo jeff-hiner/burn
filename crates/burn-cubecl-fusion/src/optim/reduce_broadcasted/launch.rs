@@ -1,28 +1,32 @@
+use crate::engine::codegen::ir::FuseArg;
+use cubek::reduce::components::instructions::ReduceOperationConfig;
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "autotune")]
 use crate::{
     engine::{
-        codegen::ir::{FuseArg, FuseBlockConfig, GlobalArgsLaunch, RefLayout},
+        codegen::ir::{FuseBlockConfig, GlobalArgsLaunch, RefLayout},
         launch::runner::{TraceRunner, Vectorization},
     },
     optim::reduce_broadcasted::unit::{
         ElemwiseFuseBlockLaunch, ReduceFuseBlockLaunch, reduce_kernel_broadcasted,
     },
 };
+#[cfg(feature = "autotune")]
 use cubecl::{
     Runtime,
     ir::{ElemType, FloatKind, StorageType},
     prelude::*,
     server::LaunchError,
 };
+#[cfg(feature = "autotune")]
 use cubek::reduce::{
     LineMode, ReduceDtypes,
-    components::instructions::ReduceOperationConfig,
     launch::RoutineStrategy,
     routines::{
         BlueprintStrategy, GlobalReduceBlueprint, ReduceLineSettings, ReduceProblem, Routine,
         unit::{UnitRoutine, UnitStrategy},
     },
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ReduceBroadcastedFuseBlock {
@@ -31,6 +35,7 @@ pub struct ReduceBroadcastedFuseBlock {
     pub(crate) output: FuseArg,
 }
 
+#[cfg(feature = "autotune")]
 #[derive(new)]
 pub struct FusedReduceBroadcastedLaunch<'a> {
     blocks: &'a Vec<ReduceBroadcastedFuseBlock>,
@@ -39,8 +44,10 @@ pub struct FusedReduceBroadcastedLaunch<'a> {
     _strategy: RoutineStrategy,
 }
 
+#[cfg(feature = "autotune")]
 impl<R: Runtime> Vectorization<R> for FusedReduceBroadcastedLaunch<'_> {}
 
+#[cfg(feature = "autotune")]
 impl<R: Runtime> TraceRunner<R> for FusedReduceBroadcastedLaunch<'_> {
     type Error = LaunchError;
 

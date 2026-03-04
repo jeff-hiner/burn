@@ -73,6 +73,7 @@ pub struct MatmulOptimizationState {
 
 impl<R: Runtime> MatmulOptimizationInfo<R> {
     /// Returns the number of output buffers added by fusion.
+    #[cfg(feature = "autotune")]
     pub fn num_output_buffers(&self) -> usize {
         self.trace_fallback.resources.outputs.len()
     }

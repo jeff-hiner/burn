@@ -1,22 +1,23 @@
 #[cfg(feature = "autotune")]
 use crate::optim::reduce::tune::fused_reduce_autotune;
+#[cfg(feature = "autotune")]
+use crate::optim::reduce_broadcasted::{
+    launch::FusedReduceBroadcastedLaunch, tune::fused_broadcasted_reduce_autotune,
+};
 use crate::{
     CubeFusionHandle, FallbackOperation,
-    engine::{
-        launch::FuseTraceLauncher,
-        trace::{FuseTrace, TraceError, TuneOutput},
-    },
+    engine::trace::{FuseTrace, TuneOutput},
     optim::{
         elemwise::{ElemwiseOptimization, ElemwiseOptimizationState},
         reduce::{ReduceOptimizationInfo, ReduceOptimizationState, ReduceOptimizationTuneArg},
-        reduce_broadcasted::{
-            launch::{FusedReduceBroadcastedLaunch, ReduceBroadcastedFuseBlock},
-            tune::fused_broadcasted_reduce_autotune,
-        },
+        reduce_broadcasted::launch::ReduceBroadcastedFuseBlock,
     },
 };
+#[cfg(feature = "autotune")]
+use crate::engine::{launch::FuseTraceLauncher, trace::TraceError};
 use burn_fusion::stream::Context;
 use cubecl::{Runtime, prelude::*};
+#[cfg(feature = "autotune")]
 use cubek::reduce::launch::RoutineStrategy;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -64,8 +65,11 @@ impl<R: Runtime> ReduceBlockOptimInfo<R> {
 
 pub(crate) struct ReduceBroadcastedOptimizationTuneArg<R: Runtime> {
     pub(crate) fallbacks: Vec<ReduceBlockOptimArg<R>>,
+    #[cfg(feature = "autotune")]
     pub(crate) broadcasted: Arc<ReduceBroadcastedInfo>,
+    #[cfg(feature = "autotune")]
     pub(crate) client: ComputeClient<R>,
+    #[cfg(feature = "autotune")]
     pub(crate) device: R::Device,
 }
 
@@ -112,6 +116,7 @@ pub enum ReduceBlockState {
 }
 
 impl<R: Runtime> ReduceBroadcastedOptimizationTuneArg<R> {
+    #[cfg(feature = "autotune")]
     pub fn execute_fused<BT: CubeElement>(
         &self,
         context: &mut Context<'_, CubeFusionHandle<R>>,
@@ -148,7 +153,9 @@ impl<R: Runtime> ReduceBroadcastedOptimization<R> {
         fallback: impl Fn(usize) -> Box<dyn FallbackOperation<R>>,
     ) {
         let mut current_index = 0;
+        #[cfg(feature = "autotune")]
         let mut client = None;
+        #[cfg(feature = "autotune")]
         let mut device = None;
 
         let fallbacks = self
@@ -160,8 +167,11 @@ impl<R: Runtime> ReduceBroadcastedOptimization<R> {
                     ReduceBlockOptimInfo::Reduce(info) => {
                         // The index of the fallback reduce is the number of ops fused as read.
                         let fallback = fallback(current_index + info.len_read);
-                        client = Some(info.client.clone());
-                        device = Some(info.device.clone());
+                        #[cfg(feature = "autotune")]
+                        {
+                            client = Some(info.client.clone());
+                            device = Some(info.device.clone());
+                        }
                         let arg = ReduceOptimizationTuneArg {
                             info: info.clone(),
                             fallback: Arc::new(fallback),
@@ -176,8 +186,11 @@ impl<R: Runtime> ReduceBroadcastedOptimization<R> {
 
         let arg = ReduceBroadcastedOptimizationTuneArg {
             fallbacks,
+            #[cfg(feature = "autotune")]
             client: client.unwrap(),
+            #[cfg(feature = "autotune")]
             device: device.unwrap(),
+            #[cfg(feature = "autotune")]
             broadcasted: self.info.broadcasted.clone(),
         };
 

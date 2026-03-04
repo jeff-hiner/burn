@@ -6,6 +6,7 @@ pub mod optim;
 mod base;
 
 pub(crate) mod engine;
+#[cfg(feature = "autotune")]
 pub(crate) mod tune;
 
 pub use base::*;
